@@ -1,0 +1,40 @@
+{
+  "db": "data/zhijian.db",
+  "email": "",
+  "river": {
+    "enabled": true,
+    "base_url": "https://river.to/occasus",
+    "login_url": "把 wtlwp_token 登录链接粘到这里",
+    "sections": [
+      "raw3fe4mpvd5h3",
+      "rawuvzjufg6fz7",
+      "rawwhmc4q7lx5h",
+      "rawjdqws9xu6wr",
+      "rawxr2efy4m9w5",
+      "rawgkbj5wkhddm",
+      "rawzxtv43hqsjd"
+    ],
+    "timeout": 30,
+    "delay": 0.5
+  },
+  "pubmed": {
+    "enabled": true,
+    "reldate": 14,
+    "max_per_group": 8,
+    "groups": {
+      "医学前沿": "(\"N Engl J Med\"[ta] OR \"Lancet\"[ta] OR \"JAMA\"[ta] OR \"BMJ\"[ta] OR \"Nat Med\"[ta])",
+      "记忆": "(\"episodic memory\"[tiab] OR \"working memory\"[tiab] OR \"Alzheimer's disease\"[tiab] OR dementia[tiab])",
+      "衰老": "(\"cellular senescence\"[tiab] OR \"healthy aging\"[tiab] OR longevity[tiab] OR healthspan[tiab] OR senescence[tiab])"
+    }
+  },
+  "rss": {
+    "enabled": true,
+    "max_per_feed": 6,
+    "feeds": [
+      {"name": "Nature Medicine", "url": "https://www.nature.com/nm.rss"},
+      {"name": "Nature Neuroscience", "url": "https://www.nature.com/neuro.rss"},
+      {"name": "Nature Aging", "url": "https://www.nature.com/nataging.rss"},
+      {"name": "知识分子", "url": "https://www.zhishifenzi.com/rss"}
+    ]
+  }
+}

@@ -74,15 +74,45 @@ python3 recommender.py     # 引擎自测
 
 ```
 zhijian/
-├── recommender.py            # 核心：TF-IDF + 余弦相似度推荐引擎（唯一核心文件）
-├── demo.py                   # 千人千面 + 隐式反馈 演示
+├── recommender.py            # 核心：TF-IDF + 余弦相似度推荐引擎
+├── fetcher.py                # 内容聚合：river.to / PubMed / RSS，归一化输出
+├── store.py                  # SQLite：articles / users / feedback 三张表
+├── pipeline.py               # 编排：抓取 → 入库 → 推荐 → 反馈（命令行入口）
+├── demo.py                   # 千人千面 + 隐式反馈 演示（自带样本）
+├── config.example.json       # 配置模板（数据源 / 数据库）
 ├── data/
-│   └── sample_articles.json  # 38 篇真实抓取样本（演示用）
+│   ├── sample_articles.json  # 38 篇真实抓取样本（demo 用）
+│   └── zhijian.db            # SQLite 库（fetch 后生成，不入库）
 ├── README.md
 └── LICENSE
 ```
 
 ---
+
+## 阶段 1+2：接上真实数据（聚合 + 存储 + 推荐）
+
+```bash
+cp config.example.json config.json   # 填 river.login_url（wtlwp_token 登录链接）
+python3 pipeline.py fetch            # 抓取 river.to + PubMed + RSS，写入 SQLite
+
+python3 pipeline.py add-user u_brain 脑科学爱好者 "心理学,大脑,神经,记忆,认知"
+python3 pipeline.py add-user u_finance 财经投资者 "经济,金融,股市,市场,货币"
+python3 pipeline.py recommend u_brain 10        # 千人千面：同一内容池，各看各的
+
+python3 pipeline.py feedback u_brain <article_id> read    # 记隐式反馈 → 画像漂移
+python3 pipeline.py recommend u_brain 10                  # 再推荐，排序已变
+python3 pipeline.py stats                                # 库统计
+```
+
+`fetch` 是「尽力而为」：某个来源失败（比如 river 令牌过期、某站 RSS 403）不会
+拖垮整次抓取，会打印警告并继续。PubMed 抓取内置 0.4 秒间隔，遵守 NCBI 限流建议。
+
+实测（真实数据，120 篇入库）：
+
+- 脑科学爱好者 → 用光控制大脑 / 有望改写物理学的磁体 / …
+- 抗衰养生党 → 脑膜瘤放疗 / BMJ 医学前沿 / …
+- 隐式反馈：脑科学爱好者点开 3 篇医学论文后，推荐立刻从「脑科学」转向「医学」，
+  这正是「信息找人」——用户行为实时喂养算法。
 
 ## 从「原型」到「完整产品」的路线图
 
@@ -91,8 +121,8 @@ zhijian/
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | 0. 推荐引擎 | TF-IDF + 余弦相似度 + 画像 + 隐式反馈 | ✅ 本仓库 |
-| 1. 内容聚合 | 抓取 river.to / PubMed / Nature / RSS（已有 `sources.py` 可复用） | 🔧 待接 |
-| 2. 存储 | SQLite：`articles` / `users` / `feedback` 三张表 | 🔧 待接 |
+| 1. 内容聚合 | 抓取 river.to / PubMed / Nature / RSS，归一化入库 | ✅ 已接 |
+| 2. 存储 | SQLite：`articles` / `users` / `feedback` 三张表 | ✅ 已接 |
 | 3. 多用户 | 每个用户一份画像，一人一个个性化 digest | 🔧 待接 |
 | 4. 推送 | 按用户时区/频率，邮件或 Webhook 推送 | 🔧 待接 |
 | 5. Web 界面 | 注册、选兴趣、点「喜欢/不感兴趣」回收反馈 | 🔜 |
