@@ -1,6 +1,16 @@
 {
   "db": "data/zhijian.db",
   "email": "",
+  "smtp": {
+    "smtp_host": "smtp.qq.com",
+    "smtp_port": 465,
+    "security": "ssl",
+    "username": "",
+    "password": "",
+    "from_addr": "",
+    "from_name": "知荐"
+  },
+  "schedule": {"hour": 8, "minute": 0},
   "river": {
     "enabled": true,
     "base_url": "https://river.to/occasus",

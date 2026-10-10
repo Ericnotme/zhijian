@@ -78,6 +78,7 @@ zhijian/
 ├── fetcher.py                # 内容聚合：river.to / PubMed / RSS，归一化输出
 ├── store.py                  # SQLite：articles / users / feedback 三张表
 ├── pipeline.py               # 编排：抓取 → 入库 → 推荐 → 反馈（命令行入口）
+├── deliver.py                # 投递：个性化 digest 渲染 + 邮件发送 + 去重
 ├── demo.py                   # 千人千面 + 隐式反馈 演示（自带样本）
 ├── config.example.json       # 配置模板（数据源 / 数据库）
 ├── data/
@@ -114,6 +115,31 @@ python3 pipeline.py stats                                # 库统计
 - 隐式反馈：脑科学爱好者点开 3 篇医学论文后，推荐立刻从「脑科学」转向「医学」，
   这正是「信息找人」——用户行为实时喂养算法。
 
+## 阶段 3：多用户定时推送
+
+```bash
+# 给用户挂邮箱（可重复执行更新邮箱）
+python3 pipeline.py add-user u_brain 脑科学爱好者 "心理学,大脑,神经,记忆,认知" --email me@qq.com
+
+# 抓取 + 给所有有邮箱的用户各发一封「千人千面」的个性化 digest
+python3 pipeline.py deliver-all            # 真正发信
+python3 pipeline.py deliver-all --dry-run  # 只打印不发信
+python3 pipeline.py deliver-all --no-fetch # 跳过抓取，用已有库投递
+python3 pipeline.py deliver-all --top-k 20 # 每人 20 篇
+```
+
+`deliver-all` 每跑一次：抓取新内容 → 算每个用户的画像 → 推荐 → **排除该用户已推送过的**
+（`deliveries` 表去重）→ 渲染 → 发信 → 记录。所以同一篇文章**永远不会**给同一个人发两次。
+
+**定时**：装个 cron / launchd，每天 08:00 跑 `deliver-all` 即可：
+
+```cron
+0 8 * * * cd /绝对路径/zhijian && /usr/bin/python3 pipeline.py deliver-all >> logs/deliver.log 2>&1
+```
+
+SMTP 配置在 `config.json` 的 `smtp` 段（服务器/端口/加密/账号/授权码/发件人），
+`users` 表的邮箱在 `add-user` 时用 `--email` 指定。
+
 ## 从「原型」到「完整产品」的路线图
 
 这个仓库是**大脑**，完整产品还需要把「手脚」接上：
@@ -123,8 +149,8 @@ python3 pipeline.py stats                                # 库统计
 | 0. 推荐引擎 | TF-IDF + 余弦相似度 + 画像 + 隐式反馈 | ✅ 本仓库 |
 | 1. 内容聚合 | 抓取 river.to / PubMed / Nature / RSS，归一化入库 | ✅ 已接 |
 | 2. 存储 | SQLite：`articles` / `users` / `feedback` 三张表 | ✅ 已接 |
-| 3. 多用户 | 每个用户一份画像，一人一个个性化 digest | 🔧 待接 |
-| 4. 推送 | 按用户时区/频率，邮件或 Webhook 推送 | 🔧 待接 |
+| 3. 多用户 | 每个用户一份画像，一人一个个性化 digest | ✅ 已接 |
+| 4. 推送 | 邮件推送，`deliveries` 表去重，永不重发 | ✅ 已接 |
 | 5. Web 界面 | 注册、选兴趣、点「喜欢/不感兴趣」回收反馈 | 🔜 |
 | 6. 升级算法 | 换 word2vec/协同过滤/召回排序两段式 | 🔜 |
 

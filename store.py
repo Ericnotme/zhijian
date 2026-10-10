@@ -4,11 +4,12 @@
 store.py —— 「知荐」SQLite 存储层
 ================================
 
-三张表：
+表：
 
-    articles  —— 抓来的文章（标题 / 用于推荐的正文 / 来源 / 分类 / 日期 / 链接）
-    users     —— 用户（id / 名字 / 兴趣词 JSON）
-    feedback  —— 隐式反馈（用户点开/喜欢/不喜欢某篇文章）
+    articles   —— 抓来的文章（标题 / 推荐正文 / 来源 / 分类 / 日期 / 链接）
+    users      —— 用户（id / 名字 / 兴趣词 JSON / 邮箱）
+    feedback   —— 隐式反馈（用户点开/喜欢/不喜欢某篇文章）
+    deliveries —— 已推送记录（每个用户收到过哪些文章，用于去重）
 
 只依赖 Python 3 标准库（sqlite3）。
 """
@@ -23,26 +24,33 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
     id        TEXT PRIMARY KEY,
     title     TEXT NOT NULL,
-    text      TEXT,                 -- title + summary + category，供推荐引擎分词
+    text      TEXT,
     summary   TEXT,
     source    TEXT,
     category  TEXT,
-    date      TEXT,                 -- YYYY-MM-DD
+    date      TEXT,
     url       TEXT,
     first_seen TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS users (
     id        TEXT PRIMARY KEY,
     name      TEXT,
-    interests TEXT,                 -- JSON 数组：显式兴趣词
+    interests TEXT,
+    email     TEXT,
     created   TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS feedback (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    TEXT NOT NULL,
     article_id TEXT NOT NULL,
-    action     TEXT NOT NULL,       -- read / like / dislike
+    action     TEXT NOT NULL,
     ts         TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS deliveries (
+    user_id    TEXT NOT NULL,
+    article_id TEXT NOT NULL,
+    sent_at    TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, article_id)
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(user_id);
 """
@@ -56,7 +64,15 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """给老库补 email 列（阶段 3 之前建的库没有）。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
+    if "email" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
 
 # --------------------------------------------------------------------------- #
@@ -64,11 +80,9 @@ def init_db(conn: sqlite3.Connection) -> None:
 # --------------------------------------------------------------------------- #
 
 def upsert_articles(conn: sqlite3.Connection, items: list[dict]) -> int:
-    """批量写入/更新文章。返回新增条数。"""
     n = 0
     for it in items:
-        cur = conn.execute("SELECT 1 FROM articles WHERE id=?", (it["id"],))
-        if cur.fetchone():
+        if conn.execute("SELECT 1 FROM articles WHERE id=?", (it["id"],)).fetchone():
             continue
         conn.execute(
             "INSERT INTO articles (id, title, text, summary, source, category, date, url) "
@@ -93,19 +107,19 @@ def list_articles(conn: sqlite3.Connection) -> list[dict]:
 # --------------------------------------------------------------------------- #
 
 def upsert_user(conn: sqlite3.Connection, user_id: str, name: str,
-                interests: list[str]) -> None:
+                interests: list[str], email: str = "") -> None:
     conn.execute(
-        "INSERT INTO users (id, name, interests) VALUES (?,?,?) "
-        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, interests=excluded.interests",
-        (user_id, name, json.dumps(interests, ensure_ascii=False)),
+        "INSERT INTO users (id, name, interests, email) VALUES (?,?,?,?) "
+        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, interests=excluded.interests, "
+        "email=excluded.email",
+        (user_id, name, json.dumps(interests, ensure_ascii=False), email or ""),
     )
     conn.commit()
 
 
 def list_users(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute("SELECT id, name, interests FROM users").fetchall()
     out = []
-    for r in rows:
+    for r in conn.execute("SELECT id, name, interests, email FROM users").fetchall():
         d = dict(r)
         d["interests"] = json.loads(d.get("interests") or "[]")
         out.append(d)
@@ -113,7 +127,7 @@ def list_users(conn: sqlite3.Connection) -> list[dict]:
 
 
 def get_user(conn: sqlite3.Connection, user_id: str) -> dict | None:
-    r = conn.execute("SELECT id, name, interests FROM users WHERE id=?", (user_id,)).fetchone()
+    r = conn.execute("SELECT id, name, interests, email FROM users WHERE id=?", (user_id,)).fetchone()
     if not r:
         return None
     d = dict(r)
@@ -144,13 +158,28 @@ def feedback_article_ids(conn: sqlite3.Connection, user_id: str,
     return [r["article_id"] for r in rows]
 
 
+# --------------------------------------------------------------------------- #
+# deliveries（已推送去重）
+# --------------------------------------------------------------------------- #
+
+def add_delivery(conn: sqlite3.Connection, user_id: str, article_id: str) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO deliveries (user_id, article_id) VALUES (?,?)",
+        (user_id, article_id),
+    )
+
+
+def delivered_article_ids(conn: sqlite3.Connection, user_id: str) -> set[str]:
+    rows = conn.execute("SELECT article_id FROM deliveries WHERE user_id=?", (user_id,)).fetchall()
+    return {r["article_id"] for r in rows}
+
+
 if __name__ == "__main__":
     conn = connect(":memory:")
     init_db(conn)
-    upsert_articles(conn, [{"id": "a1", "title": "脑膜瘤的放射治疗", "text": "脑膜瘤 放射 治疗", "summary": "", "source": "Lancet", "category": "医学", "date": "2026-09-25", "url": "https://doi.org/x"}])
-    upsert_user(conn, "u1", "测试用户", ["医学", "神经", "脑"])
-    add_feedback(conn, "u1", "a1", "read")
-    print("文章:", list_articles(conn))
+    upsert_user(conn, "u1", "测试", ["医学", "神经"], "a@b.com")
+    upsert_articles(conn, [{"id": "a1", "title": "脑膜瘤", "text": "脑膜瘤 治疗", "summary": "", "source": "Lancet", "category": "医学", "date": "2026-09-25", "url": "x"}])
+    add_delivery(conn, "u1", "a1")
     print("用户:", list_users(conn))
-    print("反馈:", feedback_article_ids(conn, "u1"))
+    print("已推送:", delivered_article_ids(conn, "u1"))
     print("OK")

@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 import fetcher
+import deliver
 import store
 from recommender import Recommender
 
@@ -62,8 +63,8 @@ def cmd_add_user(args):
     cfg = load_config()
     conn = connect(cfg)
     interests = [x.strip() for x in args.interests.split(",") if x.strip()]
-    store.upsert_user(conn, args.user_id, args.name, interests)
-    print(f"✔ 用户 {args.name}（{args.user_id}）兴趣：{interests}")
+    store.upsert_user(conn, args.user_id, args.name, interests, email=args.email or "")
+    print(f"✔ 用户 {args.name}（{args.user_id}）兴趣：{interests}  邮箱：{args.email or '(未设)'}")
 
 
 def cmd_users(args):
@@ -121,7 +122,23 @@ def cmd_stats(args):
     print(f"文章：{n_articles} 篇    用户：{n_users} 个")
     for u in store.list_users(conn):
         fb = store.feedback_article_ids(conn, u["id"])
-        print(f"  {u['id']:<14} {u['name']:<12} 反馈 {len(fb)} 条")
+        delivered = len(store.delivered_article_ids(conn, u["id"]))
+        print(f"  {u['id']:<14} {u['name']:<12} 反馈 {len(fb)} 条  已推送 {delivered} 篇  {u.get('email') or '(无邮箱)'}")
+
+
+def cmd_deliver_all(args):
+    cfg = load_config()
+    conn = connect(cfg)
+    if not args.no_fetch:
+        items = fetcher.aggregate(cfg)
+        added = store.upsert_articles(conn, items)
+        print(f"抓取 {len(items)} 篇，新增 {added} 篇")
+    n = deliver.deliver_all(cfg, conn, top_k=args.top_k, dry_run=args.dry_run)
+    if args.dry_run:
+        print(f"[dry-run] 完成，将投递 {n} 人")
+    else:
+        print(f"完成，共投递 {n} 人")
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -138,6 +155,7 @@ def main(argv=None):
     pa.add_argument("user_id")
     pa.add_argument("name")
     pa.add_argument("interests", help="兴趣词，逗号分隔")
+    pa.add_argument("--email", help="邮箱（用于投递）")
     pa.set_defaults(func=cmd_add_user)
 
     sub.add_parser("users", help="列出用户").set_defaults(func=cmd_users)
@@ -154,6 +172,12 @@ def main(argv=None):
     pf.set_defaults(func=cmd_feedback)
 
     sub.add_parser("stats", help="库统计").set_defaults(func=cmd_stats)
+
+    pd = sub.add_parser("deliver-all", help="抓取并给所有用户投递个性化 digest")
+    pd.add_argument("--dry-run", action="store_true", help="只打印，不发信")
+    pd.add_argument("--no-fetch", action="store_true", help="跳过抓取，只投递已有库")
+    pd.add_argument("--top-k", type=int, default=10, help="每人几篇（默认 10）")
+    pd.set_defaults(func=cmd_deliver_all)
 
     args = p.parse_args(argv)
     if not getattr(args, "func", None):
