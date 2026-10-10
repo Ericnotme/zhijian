@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 含密钥/令牌的配置，绝不入库
+config.json
+*.secret
+.env
+
+# 抓取到的原始数据（版权属原作者，只保留演示样本）
+data/raw/
+*.db
+*.sqlite3
+
+# 系统
+.DS_Store
