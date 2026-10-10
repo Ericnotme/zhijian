@@ -74,7 +74,9 @@ python3 recommender.py     # 引擎自测
 
 ```
 zhijian/
-├── recommender.py            # 核心：TF-IDF + 余弦相似度推荐引擎
+├── recommender.py            # 内容基：TF-IDF + 余弦相似度
+├── recommender2.py           # 升级：协同过滤 + 召回/排序两段式
+├── webapp.py                 # Web 界面（注册/选兴趣/个性化 feed/反馈）
 ├── fetcher.py                # 内容聚合：river.to / PubMed / RSS，归一化输出
 ├── store.py                  # SQLite：articles / users / feedback 三张表
 ├── pipeline.py               # 编排：抓取 → 入库 → 推荐 → 反馈（命令行入口）
@@ -140,6 +142,28 @@ python3 pipeline.py deliver-all --top-k 20 # 每人 20 篇
 SMTP 配置在 `config.json` 的 `smtp` 段（服务器/端口/加密/账号/授权码/发件人），
 `users` 表的邮箱在 `add-user` 时用 `--email` 指定。
 
+## 阶段 5 + 6：Web 界面 + 算法升级
+
+```bash
+python3 webapp.py     # 启动，浏览器打开 http://127.0.0.1:8000
+```
+
+Web 界面（标准库 `http.server`，零依赖）：
+
+- `/` 用户列表
+- `/signup` 注册（名字 + 兴趣词 + 邮箱）
+- `/u/<id>` 千人千面的个性化 feed，每篇带 **👍喜欢 / 👎不感兴趣** 按钮
+- 点按钮 → 写入 `feedback` 表 → 刷新后推荐排序立刻改变（隐式反馈闭环）
+- `/api/feed/<id>` JSON 接口
+
+算法升级（`recommender2.py`）——从「纯内容相似」升级到**两段式**：
+
+1. **召回**：内容相似(TF-IDF) ∪ 协同相似(CF) ∪ 新鲜热门，三路候选合并
+2. **排序**：`final = 0.5·内容 + 0.3·协同 + 0.2·新鲜度`
+
+协同过滤（item-item）回答的是内容基回答不了的问题：**「喜欢这篇的人，还喜欢哪些」**
+—— 靠 `feedback` 表里的多人行为交叉，能推荐出「关键词并不匹配、但口味相近」的内容。
+
 ## 从「原型」到「完整产品」的路线图
 
 这个仓库是**大脑**，完整产品还需要把「手脚」接上：
@@ -151,8 +175,8 @@ SMTP 配置在 `config.json` 的 `smtp` 段（服务器/端口/加密/账号/授
 | 2. 存储 | SQLite：`articles` / `users` / `feedback` 三张表 | ✅ 已接 |
 | 3. 多用户 | 每个用户一份画像，一人一个个性化 digest | ✅ 已接 |
 | 4. 推送 | 邮件推送，`deliveries` 表去重，永不重发 | ✅ 已接 |
-| 5. Web 界面 | 注册、选兴趣、点「喜欢/不感兴趣」回收反馈 | 🔜 |
-| 6. 升级算法 | 换 word2vec/协同过滤/召回排序两段式 | 🔜 |
+| 5. Web 界面 | 注册、选兴趣、点「喜欢/不感兴趣」回收反馈 | ✅ 已接 |
+| 6. 升级算法 | 协同过滤 + 召回/排序两段式混合推荐 | ✅ 已接 |
 
 ---
 
